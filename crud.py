@@ -29,14 +29,15 @@ def check_user(username: str, password: str):
     with engine.connect() as connection:
         return connection.execute(stmt).first()
 
-def create_task(user_id: int, name: str, description: str | None = None):
-    stmt = insert(tasks_tabe).values(name=name, description=description, user_id=user_id)
+def create_task(title: str, description: str | None = None):
+    stmt = insert(tasks_tabe).values(title=title, description=description, completed=False)
     with engine.connect() as connection:
-        connection.execute(stmt)
+        result = connection.execute(stmt)
         connection.commit()
+        return result.inserted_primary_key[0]
 
-def get_tasks(user_id: int):
-    stmt = select(tasks_tabe).where(tasks_tabe.columns.user_id==user_id)
+def get_tasks():
+    stmt = select(tasks_tabe).order_by(tasks_tabe.columns.id.asc())
     with engine.connect() as connection:
         tasks = connection.execute(stmt)
         return list(tasks)
@@ -49,36 +50,52 @@ def get_one_task(user_id: int, pk: int):
             raise Exception('task not found.')
         return existing_task
 
-def update_task(user_id: int, pk: int, name: str | None = None, description: str | None = None):
-    if name is None and description is None:
+def update_task(pk: int, title: str | None = None, description: str | None = None):
+    if title is None and description is None:
         return
-    elif name is not None and description is None:
-        stmt = (
-            update(tasks_tabe)
-            .values(name=name)
-            .where(tasks_tabe.columns.id==pk, tasks_tabe.columns.user_id==user_id)
-        )
-    elif name is None and description is not None:
-        stmt = (
-            update(tasks_tabe)
-            .values(description=description)
-            .where(tasks_tabe.columns.id==pk, tasks_tabe.columns.user_id==user_id)
-        )
-    else:
-        stmt = (
-            update(tasks_tabe)
-            .values(name=name, description=description)
-            .where(tasks_tabe.columns.id==pk, tasks_tabe.columns.user_id==user_id)
-        )
+    stmt = select(tasks_tabe).where(tasks_tabe.columns.id == pk)
+    with engine.connect() as connection:
+        existing_task = connection.execute(stmt).first()
+        if existing_task is None:
+            raise Exception('Task not found.')
+    values = {}
+    if title is not None:
+        values['title'] = title
+    if description is not None:
+        values['description'] = description
+    stmt = update(tasks_tabe).values(**values).where(tasks_tabe.columns.id == pk)
     with engine.connect() as connection:
         connection.execute(stmt)
         connection.commit()
 
-def delete_task(user_id: int, pk: int):
-    stmt = delete(tasks_tabe).where(tasks_tabe.columns.id==pk, tasks_tabe.columns.user_id==user_id)
+def delete_task(pk: int):
+    stmt = select(tasks_tabe).where(tasks_tabe.columns.id == pk)
+    with engine.connect() as connection:
+        existing_task = connection.execute(stmt).first()
+        if existing_task is None:
+            return 'Task not found.'
+    stmt = delete(tasks_tabe).where(tasks_tabe.columns.id == pk)
     with engine.connect() as connection:
         connection.execute(stmt)
         connection.commit()
+        return 'Task deleted.'
+
+def change_task_status(pk: int):
+    stmt = select(tasks_tabe).where(tasks_tabe.columns.id == pk)
+    with engine.connect() as connection:
+        task = connection.execute(stmt).first()
+        if task is None:
+            raise Exception('Task not found.')
+        current_status = task['completed']
+    new_status = not current_status
+    stmt = update(tasks_tabe).values(completed=new_status).where(tasks_tabe.columns.id == pk)
+    with engine.connect() as connection:
+        connection.execute(stmt)
+        connection.commit()
+    stmt = select(tasks_tabe).where(tasks_tabe.columns.id == pk)
+    with engine.connect() as connection:
+        updated_task = connection.execute(stmt).first()
+        return updated_task
 
 def mark_as_complated(user_id: int, pk: int):
     stmt = update(tasks_tabe).values(complated=True).where(tasks_tabe.columns.id==pk, tasks_tabe.columns.user_id==user_id)
